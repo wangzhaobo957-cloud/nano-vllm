@@ -12,14 +12,17 @@ class VocabParallelEmbedding(nn.Module):
     def __init__(
         self,
         num_embeddings: int,#词汇表大小
-        embedding_dim: int,#嵌入维度
+        embedding_dim: int,#嵌入维度，每个token用多少个数字来表示，相当于模型的hidden_size参数
     ):
         super().__init__()
         self.tp_rank = dist.get_rank()#当前是第几张卡
         self.tp_size = dist.get_world_size()#总卡数
+
         assert num_embeddings % self.tp_size == 0#词汇表大小必须是总卡数的整数倍，否则无法并行计算
+
         self.num_embeddings = num_embeddings#词汇表大小
-        self.num_embeddings_per_partition = self.num_embeddings // self.tp_size#每张卡分多少行
+
+        self.num_embeddings_per_partition = self.num_embeddings // self.tp_size#每张卡分多少个词汇表
         self.vocab_start_idx = self.num_embeddings_per_partition * self.tp_rank#本卡负责的词汇表起始索引
         self.vocab_end_idx = self.vocab_start_idx + self.num_embeddings_per_partition#当前卡的词汇表结束索引
         self.weight = nn.Parameter(torch.empty(self.num_embeddings_per_partition, embedding_dim))#本卡负责的词汇表嵌入权重
