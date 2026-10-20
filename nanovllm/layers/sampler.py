@@ -1,7 +1,8 @@
 import torch
 from torch import nn
 
-
+#采样器
+#根据logits和temperatures采样token
 class Sampler(nn.Module):
 
     @torch.compile

@@ -10,7 +10,8 @@ from nanovllm.layers.linear import QKVParallelLinear, MergedColumnParallelLinear
 from nanovllm.layers.rotary_embedding import get_rope
 from nanovllm.layers.embed_head import VocabParallelEmbedding, ParallelLMHead
 
-
+#Qwen3注意力层
+#计算注意力权重，应用注意力机制，返回注意力输出
 class Qwen3Attention(nn.Module):
 
     def __init__(
@@ -87,7 +88,8 @@ class Qwen3Attention(nn.Module):
         output = self.o_proj(o.flatten(1, -1))
         return output
 
-
+#Qwen3MLP层
+#计算MLP层的输出，返回MLP层的输出
 class Qwen3MLP(nn.Module):
 
     def __init__(
@@ -116,7 +118,8 @@ class Qwen3MLP(nn.Module):
         x = self.down_proj(x)
         return x
 
-
+#Qwen3解码器层
+#包含注意力层和MLP层
 class Qwen3DecoderLayer(nn.Module):
 
     def __init__(
@@ -158,7 +161,9 @@ class Qwen3DecoderLayer(nn.Module):
         hidden_states = self.mlp(hidden_states)
         return hidden_states, residual
 
-
+#Qwen3模型
+#包含词汇并行嵌入层和解码器层
+#解码器层包含注意力层和MLP层
 class Qwen3Model(nn.Module):
 
     def __init__(
@@ -166,25 +171,33 @@ class Qwen3Model(nn.Module):
         config: Qwen3Config,
     ) -> None:
         super().__init__()
+        #词汇并行嵌入层
+        #将input_ids转换为hidden_states
         self.embed_tokens = VocabParallelEmbedding(config.vocab_size, config.hidden_size)
+        #解码器层
+        #包含注意力层和MLP层
         self.layers = nn.ModuleList([Qwen3DecoderLayer(config) for _ in range(config.num_hidden_layers)])
+        #层归一化层
+        #将hidden_states归一化
         self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
+    #前向传播
     def forward(
         self,
         input_ids: torch.Tensor,
         positions: torch.Tensor,
     ) -> torch.Tensor:
-        hidden_states = self.embed_tokens(input_ids)
-        residual = None
-        for layer in self.layers:
+        hidden_states = self.embed_tokens(input_ids)#将input_ids转换为hidden_states
+        residual = None#初始化残idual为None
+        for layer in self.layers:#遍历每个layer，向前传播
             hidden_states, residual = layer(positions, hidden_states, residual)
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
 
-
+#Qwen3因果语言模型
+#包含Qwen3模型和语言模型头
 class Qwen3ForCausalLM(nn.Module):
-    packed_modules_mapping = {
+    packed_modules_mapping = {#将模型的参数打包，方便并行计算
         "q_proj": ("qkv_proj", "q"),
         "k_proj": ("qkv_proj", "k"),
         "v_proj": ("qkv_proj", "v"),
@@ -197,18 +210,19 @@ class Qwen3ForCausalLM(nn.Module):
         config: Qwen3Config
     ) -> None:
         super().__init__()
-        self.model = Qwen3Model(config)
-        self.lm_head = ParallelLMHead(config.vocab_size, config.hidden_size)
-        if config.tie_word_embeddings:
+        self.model = Qwen3Model(config)#Qwen3模型
+        self.lm_head = ParallelLMHead(config.vocab_size, config.hidden_size)#语言模型头
+        if config.tie_word_embeddings:#如果要绑定词嵌入层和语言模型头
             self.lm_head.weight.data = self.model.embed_tokens.weight.data
-
-    def forward(
+    #这个函数是模型的前向传播函数，输入的参数是input_ids和positions，输出的参数是hidden_states
+    def forward(#向前传播，这是用的qwen3模型的前向传播函数
         self,
         input_ids: torch.Tensor,
         positions: torch.Tensor,
     ) -> torch.Tensor:
         return self.model(input_ids, positions)
 
+    #计算logits,输入hidden_states,输出logits
     def compute_logits(
         self,
         hidden_states: torch.Tensor,

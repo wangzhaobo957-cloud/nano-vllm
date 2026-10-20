@@ -55,7 +55,7 @@ class Attention(nn.Module):
         self.scale = scale
         self.num_kv_heads = num_kv_heads
         self.k_cache = self.v_cache = torch.tensor([])
-
+    #模型前向传播，输入查询、键、值，输出注意力输出
     def forward(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor):
         context = get_context()
         k_cache, v_cache = self.k_cache, self.v_cache

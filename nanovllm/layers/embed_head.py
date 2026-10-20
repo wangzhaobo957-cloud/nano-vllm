@@ -5,24 +5,25 @@ import torch.distributed as dist
 
 from nanovllm.utils.context import get_context
 
-
+#词汇并行嵌入层
+#将输入的token id转换为对应的向量表示
 class VocabParallelEmbedding(nn.Module):
 
     def __init__(
         self,
-        num_embeddings: int,
-        embedding_dim: int,
+        num_embeddings: int,#词汇表大小
+        embedding_dim: int,#嵌入维度
     ):
         super().__init__()
-        self.tp_rank = dist.get_rank()
-        self.tp_size = dist.get_world_size()
-        assert num_embeddings % self.tp_size == 0
-        self.num_embeddings = num_embeddings
-        self.num_embeddings_per_partition = self.num_embeddings // self.tp_size
-        self.vocab_start_idx = self.num_embeddings_per_partition * self.tp_rank
-        self.vocab_end_idx = self.vocab_start_idx + self.num_embeddings_per_partition
-        self.weight = nn.Parameter(torch.empty(self.num_embeddings_per_partition, embedding_dim))
-        self.weight.weight_loader = self.weight_loader
+        self.tp_rank = dist.get_rank()#当前是第几张卡
+        self.tp_size = dist.get_world_size()#总卡数
+        assert num_embeddings % self.tp_size == 0#词汇表大小必须是总卡数的整数倍，否则无法并行计算
+        self.num_embeddings = num_embeddings#词汇表大小
+        self.num_embeddings_per_partition = self.num_embeddings // self.tp_size#每张卡分多少行
+        self.vocab_start_idx = self.num_embeddings_per_partition * self.tp_rank#本卡负责的词汇表起始索引
+        self.vocab_end_idx = self.vocab_start_idx + self.num_embeddings_per_partition#当前卡的词汇表结束索引
+        self.weight = nn.Parameter(torch.empty(self.num_embeddings_per_partition, embedding_dim))#本卡负责的词汇表嵌入权重
+        self.weight.weight_loader = self.weight_loader#将权重加载到本卡负责的词汇表嵌入权重中
 
     def weight_loader(self, param: nn.Parameter, loaded_weight: torch.Tensor):
         param_data = param.data
@@ -41,7 +42,7 @@ class VocabParallelEmbedding(nn.Module):
             dist.all_reduce(y)
         return y
 
-
+#LMhead，拿最后一个token的隐藏状态，输出下一个token的logits，词表有3.2个词，就需要每个GPU并行计算3.2个词的logits
 class ParallelLMHead(VocabParallelEmbedding):
 
     def __init__(
